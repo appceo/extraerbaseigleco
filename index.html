@@ -26,7 +26,7 @@
                 </div>
             </div>
             <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
-                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> v3.0 GitHub Ready
+                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> v3.1 Corregido
             </span>
         </div>
     </header>
@@ -47,13 +47,13 @@
                     </label>
                     <div class="relative">
                         <input type="file" id="excelFile" accept=".xlsx, .xls, .csv" class="hidden" />
-                        <label for="excelFile" id="dropZone" class="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-slate-600 hover:border-indigo-500 bg-slate-800/50 hover:bg-slate-700/30 rounded-xl cursor-pointer transition-all group">
-                            <div class="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
+                        <div id="dropZone" class="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-slate-600 hover:border-indigo-500 bg-slate-800/50 hover:bg-slate-700/30 rounded-xl cursor-pointer transition-all group">
+                            <div class="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4 pointer-events-none">
                                 <i data-lucide="upload-cloud" class="w-10 h-10 text-slate-400 group-hover:text-indigo-400 mb-2 transition-colors"></i>
                                 <p id="fileLabel" class="text-sm text-slate-300 font-medium">Haz clic o arrastra tu archivo <span class="font-semibold text-indigo-400">.xlsx / .xls / .csv</span></p>
                                 <p class="text-xs text-slate-500 mt-1">Soporta la estructura oficial de 37 campos de Igleco</p>
                             </div>
-                        </label>
+                        </div>
                     </div>
                 </div>
 
@@ -121,7 +121,17 @@
 
         let rawData = [];
 
-        fileInput.addEventListener('change', handleFileSelect);
+        // Activar selector al hacer clic en la zona
+        dropZone.addEventListener('click', () => {
+            fileInput.value = ''; // Resetear valor para permitir seleccionar el mismo archivo
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                processFile(e.target.files[0]);
+            }
+        });
 
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -136,8 +146,7 @@
             e.preventDefault();
             dropZone.classList.remove('border-indigo-500', 'bg-slate-700/40');
             if (e.dataTransfer.files.length > 0) {
-                fileInput.files = e.dataTransfer.files;
-                handleFileSelect();
+                processFile(e.dataTransfer.files[0]);
             }
         });
 
@@ -149,23 +158,147 @@
                 .toUpperCase();
         }
 
-        function handleFileSelect() {
-            const file = fileInput.files[0];
-            if (!file) return;
+        function processFile(file) {
+            showStatus();
+            logArea.innerHTML = "";
+            log(`📁 Leyendo archivo: ${file.name} (${(file.size / 1024).toFixed(1)} KB)...`, "indigo");
 
             fileLabel.innerHTML = `<span class="text-emerald-400 font-semibold">${file.name}</span> (${(file.size / 1024).toFixed(1)} KB)`;
 
             const reader = new FileReader();
 
-            if (file.name.endsWith('.csv')) {
-                reader.onload = function (e) {
-                    try {
-                        const content = e.target.result;
-                        rawData = parseCSVContent(content);
-                        validateAndEnable();
-                    } catch (err) {
-                        alert("Error al leer el archivo CSV: " + err.message);
+            reader.onload = function (e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    // SheetJS autodetecta delimitadores CSV y formatos Excel en modo arraybuffer
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true, raw: false });
+                    const sheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[sheetName];
+
+                    rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+
+                    if (rawData.length > 1) {
+                        processBtn.disabled = false;
+                        log(`✅ Archivo procesado con éxito: ${rawData.length - 1} filas cargadas.`, "emerald");
+                        log(`📌 Columnas detectadas: ${rawData[0].length}`, "sky");
+                    } else {
+                        log(`❌ El archivo no contiene registros suficientes.`, "amber");
+                        processBtn.disabled = true;
                     }
-                };
-                reader.readAsText(file, "UTF-8");
-            } else {
+                } catch (err) {
+                    log(`❌ Error al procesar la estructura del archivo: ${err.message}`, "amber");
+                    processBtn.disabled = true;
+                }
+            };
+
+            reader.onerror = function () {
+                log(`❌ Error al leer el archivo desde el navegador.`, "amber");
+                processBtn.disabled = true;
+            };
+
+            reader.readAsArrayBuffer(file);
+        }
+
+        processBtn.addEventListener('click', () => {
+            if (rawData.length < 2) return;
+
+            const selectedOption = grupoSelect.value;
+            log(`🚀 Iniciando extracción para: [${selectedOption}]...`, "indigo");
+
+            const headers = rawData[0];
+            const cleanHeaders = headers.map(h => cleanString(h));
+
+            // Identificar columna objetivo
+            let colGrupoIndex = cleanHeaders.findIndex(h => 
+                h.includes("GRUPO") || h.includes("PERTENECE") || h.includes("ASISTE")
+            );
+
+            if (colGrupoIndex === -1) colGrupoIndex = 11; // Índice por defecto
+
+            log(`ℹ️ Evaluando filtro en la columna: "${headers[colGrupoIndex] || 'Columna ' + (colGrupoIndex + 1)}"`, "slate");
+
+            const prefixMap = {
+                "ASIGNAR": "ASIGNAR",
+                "CAFE": "CAFE",
+                "CASOS ESPECIALES": "CASOS",
+                "NUEVOS PARA CONECTAR": "NUEVOS",
+                "REUBICAR CFV": "REUBICAR"
+            };
+
+            const targetPrefix = prefixMap[selectedOption] || "";
+            const dataRows = rawData.slice(1);
+            let filteredRows = [];
+
+            dataRows.forEach((row) => {
+                const rawVal = row[colGrupoIndex];
+                const cleanVal = cleanString(rawVal);
+                let matches = false;
+
+                if (selectedOption === "VACIO") {
+                    matches = (cleanVal === "" || cleanVal === "NULL" || cleanVal === "UNDEFINED" || cleanVal === "SIN INFORMACION");
+                } else {
+                    matches = cleanVal.startsWith(targetPrefix);
+                }
+
+                if (matches) {
+                    filteredRows.push(row);
+                }
+            });
+
+            log(`🔍 Registros coincidentes encontrados: ${filteredRows.length}`, "sky");
+
+            if (filteredRows.length === 0) {
+                log(`⚠️ No se encontraron coincidencias para la opción seleccionada.`, "amber");
+                badgeCount.classList.remove('hidden');
+                badgeCount.innerText = "0 Registros";
+                return;
+            }
+
+            log(`📊 Exportando archivo Excel...`, "emerald");
+
+            const exportData = [headers, ...filteredRows];
+            const newWorksheet = XLSX.utils.aoa_to_sheet(exportData);
+
+            const colWidths = headers.map(h => ({ wch: Math.max(String(h).length + 3, 14) }));
+            newWorksheet['!cols'] = colWidths;
+
+            const newWorkbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, "Igleco Filtrado");
+
+            const safeName = selectedOption.replace(/\s+/g, '_');
+            const fileName = `Igleco_${safeName}_${formatDate(new Date())}.xlsx`;
+            XLSX.writeFile(newWorkbook, fileName);
+
+            log(`🎉 Archivo generado y descargado: ${fileName}`, "emerald");
+            badgeCount.classList.remove('hidden');
+            badgeCount.innerText = `${filteredRows.length} Registros Exportados`;
+        });
+
+        function formatDate(d) {
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+        }
+
+        function showStatus() {
+            statusCard.classList.remove('hidden');
+        }
+
+        function log(msg, color = "slate") {
+            const colors = {
+                slate: "text-slate-400",
+                indigo: "text-indigo-400",
+                emerald: "text-emerald-400",
+                sky: "text-sky-400",
+                amber: "text-amber-400"
+            };
+
+            const time = new Date().toLocaleTimeString();
+            const logItem = document.createElement('div');
+            logItem.className = `${colors[color] || colors.slate} flex items-start gap-2`;
+            logItem.innerHTML = `<span class="text-slate-600">[${time}]</span> <span>${msg}</span>`;
+            logArea.appendChild(logItem);
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+    </script>
+</body>
+</html>
