@@ -6,7 +6,7 @@
     <title>Extractor y Procesador de Datos - Igleco</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- SheetJS (xlsx) para procesamiento de Excel y CSV -->
+    <!-- SheetJS (xlsx) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -26,7 +26,7 @@
                 </div>
             </div>
             <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
-                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> v3.1 Corregido
+                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> v3.2 Columna Exacta
             </span>
         </div>
     </header>
@@ -121,9 +121,8 @@
 
         let rawData = [];
 
-        // Activar selector al hacer clic en la zona
         dropZone.addEventListener('click', () => {
-            fileInput.value = ''; // Resetear valor para permitir seleccionar el mismo archivo
+            fileInput.value = '';
             fileInput.click();
         });
 
@@ -170,7 +169,6 @@
             reader.onload = function (e) {
                 try {
                     const data = new Uint8Array(e.target.result);
-                    // SheetJS autodetecta delimitadores CSV y formatos Excel en modo arraybuffer
                     const workbook = XLSX.read(data, { type: 'array', cellDates: true, raw: false });
                     const sheetName = workbook.SheetNames[0];
                     const worksheet = workbook.Sheets[sheetName];
@@ -179,8 +177,8 @@
 
                     if (rawData.length > 1) {
                         processBtn.disabled = false;
-                        log(`✅ Archivo procesado con éxito: ${rawData.length - 1} filas cargadas.`, "emerald");
-                        log(`📌 Columnas detectadas: ${rawData[0].length}`, "sky");
+                        log(`✅ Archivo cargado correctamente: ${rawData.length - 1} filas detectadas.`, "emerald");
+                        log(`📌 Total de columnas en el archivo: ${rawData[0].length}`, "sky");
                     } else {
                         log(`❌ El archivo no contiene registros suficientes.`, "amber");
                         processBtn.disabled = true;
@@ -189,11 +187,6 @@
                     log(`❌ Error al procesar la estructura del archivo: ${err.message}`, "amber");
                     processBtn.disabled = true;
                 }
-            };
-
-            reader.onerror = function () {
-                log(`❌ Error al leer el archivo desde el navegador.`, "amber");
-                processBtn.disabled = true;
             };
 
             reader.readAsArrayBuffer(file);
@@ -208,14 +201,21 @@
             const headers = rawData[0];
             const cleanHeaders = headers.map(h => cleanString(h));
 
-            // Identificar columna objetivo
-            let colGrupoIndex = cleanHeaders.findIndex(h => 
-                h.includes("GRUPO") || h.includes("PERTENECE") || h.includes("ASISTE")
-            );
+            // Búsqueda ESTRICTA y prioritarios para "Grupo al que pertenece" / "Grupo al que asiste"
+            let colGrupoIndex = cleanHeaders.findIndex(h => h === "GRUPO AL QUE PERTENECE" || h === "GRUPO AL QUE ASISTE");
 
-            if (colGrupoIndex === -1) colGrupoIndex = 11; // Índice por defecto
+            // Si no está el nombre exacto completo, buscar coincidencia de la frase completa
+            if (colGrupoIndex === -1) {
+                colGrupoIndex = cleanHeaders.findIndex(h => h.includes("GRUPO AL QUE") || (h.includes("GRUPO") && !h.includes("ULTIMA")));
+            }
 
-            log(`ℹ️ Evaluando filtro en la columna: "${headers[colGrupoIndex] || 'Columna ' + (colGrupoIndex + 1)}"`, "slate");
+            // Si aún no la encuentra, usar la columna 11 (índice base en estructuras oficiales Igleco)
+            if (colGrupoIndex === -1) {
+                colGrupoIndex = 11;
+            }
+
+            const headerNameFound = headers[colGrupoIndex] || `Columna ${colGrupoIndex + 1}`;
+            log(`🎯 Evaluando filtro en la columna objetivo: "${headerNameFound}" (Índice ${colGrupoIndex + 1})`, "indigo");
 
             const prefixMap = {
                 "ASIGNAR": "ASIGNAR",
@@ -254,7 +254,7 @@
                 return;
             }
 
-            log(`📊 Exportando archivo Excel...`, "emerald");
+            log(`📊 Generando y descargando archivo Excel...`, "emerald");
 
             const exportData = [headers, ...filteredRows];
             const newWorksheet = XLSX.utils.aoa_to_sheet(exportData);
@@ -269,7 +269,7 @@
             const fileName = `Igleco_${safeName}_${formatDate(new Date())}.xlsx`;
             XLSX.writeFile(newWorkbook, fileName);
 
-            log(`🎉 Archivo generado y descargado: ${fileName}`, "emerald");
+            log(`🎉 Archivo generado e descargado: ${fileName}`, "emerald");
             badgeCount.classList.remove('hidden');
             badgeCount.innerText = `${filteredRows.length} Registros Exportados`;
         });
