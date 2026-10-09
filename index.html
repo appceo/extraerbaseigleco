@@ -35,6 +35,14 @@
             }
         });
 
+        function cleanString(str) {
+            return String(str || "")
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .trim()
+                .toUpperCase();
+        }
+
         function handleFileSelect() {
             const file = fileInput.files[0];
             if (!file) return;
@@ -42,38 +50,81 @@
             fileLabel.innerHTML = `<span class="text-emerald-400 font-semibold">${file.name}</span> (${(file.size / 1024).toFixed(1)} KB)`;
             
             const reader = new FileReader();
-            reader.onload = function (e) {
-                try {
-                    const data = new Uint8Array(e.target.result);
-                    // raw: false e es: true ayudan a normalizar la lectura de fechas y strings en CSV y Excel
-                    const workbook = XLSX.read(data, { type: 'array', cellDates: true, raw: false });
-                    const sheetName = workbook.SheetNames[0];
-                    const worksheet = workbook.Sheets[sheetName];
 
-                    // Convertir la hoja a matriz 2D de filas
-                    rawExcelData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+            // Si es CSV, lo leemos como texto para manejar delimitadores (;, \t, ,)
+            if (file.name.endsWith('.csv')) {
+                reader.onload = function (e) {
+                    try {
+                        const content = e.target.result;
+                        rawExcelData = parseCSVContent(content);
 
-                    if (rawExcelData.length > 1) {
-                        processBtn.disabled = false;
-                        showStatus();
-                        log(`✅ Archivo cargado correctamente: ${rawExcelData.length - 1} filas encontradas.`, "emerald");
-                    } else {
-                        alert("El archivo subido no contiene registros válidos.");
+                        if (rawExcelData.length > 1) {
+                            processBtn.disabled = false;
+                            showStatus();
+                            logArea.innerHTML = "";
+                            log(`✅ Archivo CSV cargado: ${rawExcelData.length - 1} filas detectadas.`, "emerald");
+                            log(`📌 Columnas detectadas (${rawExcelData[0].length}): ${rawExcelData[0].slice(0, 5).join(' | ')}...`, "sky");
+                        } else {
+                            alert("El archivo CSV no contiene suficiente información.");
+                        }
+                    } catch (err) {
+                        alert("Error al procesar CSV: " + err.message);
                     }
-                } catch (err) {
-                    alert("Error al leer el archivo Excel: " + err.message);
-                }
-            };
-            reader.readAsArrayBuffer(file);
+                };
+                reader.readAsText(file, "UTF-8");
+            } else {
+                // Si es .xlsx o .xls
+                reader.onload = function (e) {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array', cellDates: true, raw: false });
+                        const sheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[sheetName];
+
+                        rawExcelData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+
+                        if (rawExcelData.length > 1) {
+                            processBtn.disabled = false;
+                            showStatus();
+                            logArea.innerHTML = "";
+                            log(`✅ Archivo Excel cargado: ${rawExcelData.length - 1} filas encontradas.`, "emerald");
+                            log(`📌 Columnas detectadas (${rawExcelData[0].length}): ${rawExcelData[0].slice(0, 5).join(' | ')}...`, "sky");
+                        } else {
+                            alert("El archivo subido no contiene registros válidos.");
+                        }
+                    } catch (err) {
+                        alert("Error al leer el archivo Excel: " + err.message);
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            }
         }
 
-        // Función para normalizar texto (quitar tildes, espacios extras y convertir a mayúsculas)
-        function cleanString(str) {
-            return String(str || "")
-                .normalize("NFD")
-                .replace(/[\u0300-\u036f]/g, "")
-                .trim()
-                .toUpperCase();
+        // Parser manual de CSV robusto para detectar comas, punto y coma o tabulaciones
+        function parseCSVContent(text) {
+            const lines = text.split(/\r\n|\n/).filter(line => line.trim() !== "");
+            if (lines.length === 0) return [];
+
+            // Detectar delimitador de la primera línea
+            const sampleLine = lines[0];
+            let delimiter = ",";
+            if ((sampleLine.match(/;/g) || []).length > (sampleLine.match(/,/g) || []).length) {
+                delimiter = ";";
+            } else if ((sampleLine.match(/\t/g) || []).length > (sampleLine.match(/,/g) || []).length) {
+                delimiter = "\t";
+            }
+
+            return lines.map(line => {
+                // Split básico respetando comillas simples/dobles
+                const regex = new RegExp(`(?:^|${delimiter})(?:"([^"]*)"|([^"${delimiter}]*))`, "g");
+                const row = [];
+                let matches;
+                while ((matches = regex.exec(line)) !== null) {
+                    let val = matches[1] !== undefined ? matches[1] : matches[2];
+                    row.push(val !== undefined ? val.trim() : "");
+                }
+                return row;
+            });
         }
 
         processBtn.addEventListener('click', () => {
@@ -84,20 +135,15 @@
             logArea.innerHTML = "";
             log(`🚀 Iniciando extracción para opción: [${selectedOption}]...`, "indigo");
 
-            // 1. Obtener los encabezados originales (Fila 0)
             const originalHeaders = rawExcelData[0].map(h => cleanString(h));
 
-            // Identificar dinámicamente el índice de las columnas clave
-            let colGrupoIndex = originalHeaders.findIndex(h => h.includes("GRUPO") || h.includes("PERTENECE"));
+            // Intentar buscar la columna por nombre
+            let colGrupoIndex = originalHeaders.findIndex(h => h.includes("GRUPO") || h.includes("PERTENECE") || h.includes("ESTADO") || h.includes("CATEGORIA"));
             let colFechaIndex = originalHeaders.findIndex(h => h.includes("FECHA") && h.includes("CREAC"));
 
-            // Si no las encuentra por nombre, recaer sobre los índices por defecto (9 y 10)
             if (colGrupoIndex === -1) colGrupoIndex = 9;
             if (colFechaIndex === -1) colFechaIndex = 10;
 
-            log(`ℹ️ Usando columna [${colGrupoIndex + 1}] para Filtro de Grupo y [${colFechaIndex + 1}] para Fecha de Creación.`, "slate");
-
-            // 2. Estructura de encabezados de salida
             const finalHeaders = [
                 "Identificación",
                 "Edad",
@@ -127,23 +173,28 @@
                 "detalle Conexión"
             ];
 
-            // 3. Filtrar registros según selección
             const dataRows = rawExcelData.slice(1);
             let filteredRows = [];
-
             const cleanTarget = cleanString(selectedOption);
 
             dataRows.forEach((row) => {
-                const rawVal = row[colGrupoIndex];
-                const grupoVal = cleanString(rawVal);
-                
                 let matches = false;
 
+                // 1. Probar en la columna identificada
+                const cellVal = cleanString(row[colGrupoIndex]);
+
                 if (cleanTarget === "VACIO") {
-                    matches = (grupoVal === "" || grupoVal === "SIN INFORMACION" || grupoVal === "NULL" || grupoVal === "UNDEFINED");
+                    matches = (cellVal === "" || cellVal === "SIN INFORMACION" || cellVal === "NULL" || cellVal === "UNDEFINED");
                 } else {
-                    // Coincidencia flexible por inclusión o inicio
-                    matches = grupoVal.includes(cleanTarget);
+                    matches = cellVal.includes(cleanTarget);
+                }
+
+                // 2. Búsqueda de respaldo: Si no hizo match en la columna 9/específica, escanear TODA la fila
+                if (!matches && cleanTarget !== "VACIO") {
+                    const fullRowText = row.map(c => cleanString(c)).join(" ");
+                    if (fullRowText.includes(cleanTarget)) {
+                        matches = true;
+                    }
                 }
 
                 if (matches) {
@@ -158,14 +209,14 @@
             log(`🔍 Registros encontrados que coinciden con [${selectedOption}]: ${filteredRows.length}`, "sky");
 
             if (filteredRows.length === 0) {
-                log(`⚠️ No se encontraron registros para la opción seleccionada. Verifica que el archivo contenga valores válidos.`, "amber");
+                log(`⚠️ No se encontraron registros. Revisa si el archivo realmente contiene el término '${selectedOption}'.`, "amber");
                 badgeCount.classList.remove('hidden');
                 badgeCount.innerText = "0 Registros";
                 return;
             }
 
-            // 4. Ordenamiento Multinivel
-            log(`🔃 Aplicando ordenamiento multinivel...`, "purple");
+            // Ordenamiento Multinivel
+            log(`🔃 Aplicando ordenamiento...`, "purple");
 
             filteredRows.sort((a, b) => {
                 const grupoA = cleanString(a[colGrupoIndex]);
@@ -180,7 +231,7 @@
                 return fechaB - fechaA;
             });
 
-            // 5. Construcción del nuevo archivo Excel
+            // Generar Excel
             log(`📊 Generando archivo Excel...`, "emerald");
 
             const finalData = [finalHeaders, ...filteredRows];
@@ -217,29 +268,4 @@
         }
 
         function formatDate(d) {
-            const pad = (n) => String(n).padStart(2, '0');
-            return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
-        }
-
-        function showStatus() {
-            statusCard.classList.remove('hidden');
-        }
-
-        function log(msg, color = "slate") {
-            const colors = {
-                slate: "text-slate-400",
-                indigo: "text-indigo-400",
-                emerald: "text-emerald-400",
-                sky: "text-sky-400",
-                amber: "text-amber-400",
-                purple: "text-purple-400"
-            };
-
-            const time = new Date().toLocaleTimeString();
-            const logItem = document.createElement('div');
-            logItem.className = `${colors[color] || colors.slate} flex items-start gap-2`;
-            logItem.innerHTML = `<span class="text-slate-600">[${time}]</span> <span>${msg}</span>`;
-            logArea.appendChild(logItem);
-            logArea.scrollTop = logArea.scrollHeight;
-        }
-    </script>
+            const pad = (n) => String(n).
