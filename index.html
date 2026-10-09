@@ -1,114 +1,4 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Filtrador y Procesador de Base Igleco</title>
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- SheetJS (xlsx) CDN para lectura y generación de Excel -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-</head>
-<body class="bg-slate-900 text-slate-100 min-h-screen font-sans flex flex-col justify-between">
-
-    <!-- Header -->
-    <header class="bg-slate-800/80 backdrop-blur border-b border-slate-700/60 sticky top-0 z-50">
-        <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <div class="p-2 bg-indigo-600/20 text-indigo-400 rounded-lg border border-indigo-500/30">
-                    <i data-lucide="filter" class="w-6 h-6"></i>
-                </div>
-                <div>
-                    <h1 class="text-xl font-bold text-white tracking-tight">Procesador de Base Igleco</h1>
-                    <p class="text-xs text-slate-400">Filtrado, renombrado de columnas y ordenamiento multinivel</p>
-                </div>
-            </div>
-            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
-                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> v2.0 Autónomo
-            </span>
-        </div>
-    </header>
-
-    <!-- Main Container -->
-    <main class="max-w-4xl mx-auto px-6 py-10 flex-grow w-full">
-        
-        <!-- Tarjeta de Control Principal -->
-        <div class="bg-slate-800 border border-slate-700/80 rounded-2xl p-8 shadow-2xl relative overflow-hidden">
-            <div class="absolute -right-16 -top-16 w-40 h-40 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
-
-            <div class="space-y-6">
-                
-                <!-- 1. Carga de Archivo -->
-                <div>
-                    <label class="block text-sm font-semibold text-slate-200 mb-2 flex items-center gap-2">
-                        <i data-lucide="file-spreadsheet" class="w-4 h-4 text-indigo-400"></i>
-                        1. Seleccionar archivo Excel de origen
-                    </label>
-                    <div class="relative">
-                        <input type="file" id="excelFile" accept=".xlsx, .xls, .csv" class="hidden" />
-                        <label for="excelFile" id="dropZone" class="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-slate-600 hover:border-indigo-500 bg-slate-800/50 hover:bg-slate-700/30 rounded-xl cursor-pointer transition-all group">
-                            <div class="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
-                                <i data-lucide="upload-cloud" class="w-10 h-10 text-slate-400 group-hover:text-indigo-400 mb-2 transition-colors"></i>
-                                <p id="fileLabel" class="text-sm text-slate-300 font-medium">Haz clic o arrastra aquí tu archivo <span class="font-semibold text-indigo-400">.xlsx / .xls</span></p>
-                                <p class="text-xs text-slate-500 mt-1">Estructura Base Igleco con campos numéricos y columnas compuestas</p>
-                            </div>
-                        </label>
-                    </div>
-                </div>
-
-                <!-- 2. Menú Desplegable de Categorías -->
-                <div>
-                    <label for="grupoSelect" class="block text-sm font-semibold text-slate-200 mb-2 flex items-center gap-2">
-                        <i data-lucide="layers" class="w-4 h-4 text-indigo-400"></i>
-                        2. Seleccionar Grupo a Extraer
-                    </label>
-                    <div class="relative">
-                        <select id="grupoSelect" class="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-xl p-3.5 pr-10 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 block appearance-none cursor-pointer transition-all">
-                            <option value="CAFE">CAFE</option>
-                            <option value="CASOS ESPECIALES">CASOS ESPECIALES</option>
-                            <option value="NUEVOS PARA CONECTAR">NUEVOS PARA CONECTAR</option>
-                            <option value="REUBICAR">REUBICAR</option>
-                            <option value="VACIO">VACIO</option>
-                        </select>
-                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
-                            <i data-lucide="chevron-down" class="w-4 h-4"></i>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Botón de Procesamiento -->
-                <button id="processBtn" disabled class="w-full py-4 px-6 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:from-slate-700 disabled:to-slate-700 text-white font-semibold rounded-xl shadow-lg shadow-indigo-500/20 disabled:shadow-none transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed">
-                    <i data-lucide="play" class="w-5 h-5 fill-current"></i>
-                    Procesar y Descargar Excel
-                </button>
-
-            </div>
-        </div>
-
-        <!-- Panel de Estado y Resultados -->
-        <div id="statusCard" class="hidden mt-8 bg-slate-800 border border-slate-700/80 rounded-2xl p-6 shadow-xl">
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="text-base font-semibold text-white flex items-center gap-2">
-                    <i data-lucide="terminal" class="w-4 h-4 text-indigo-400"></i>
-                    Estado del Procesamiento
-                </h3>
-                <span id="badgeCount" class="hidden px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"></span>
-            </div>
-
-            <!-- Log de Progreso -->
-            <div id="logArea" class="bg-slate-950/80 border border-slate-800 text-xs font-mono text-slate-300 p-4 rounded-xl h-48 overflow-y-auto space-y-1.5 leading-relaxed"></div>
-        </div>
-
-    </main>
-
-    <!-- Footer -->
-    <footer class="border-t border-slate-800 py-6 text-center text-xs text-slate-500">
-        Plataforma de Extracción e Inteligencia de Datos · Igleco 2026
-    </footer>
-
-    <!-- Lógica de Aplicación -->
+<!-- Lógica de Aplicación -->
     <script>
         // Inicializar Iconos
         lucide.createIcons();
@@ -155,7 +45,8 @@
             reader.onload = function (e) {
                 try {
                     const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, { type: 'array' });
+                    // raw: false e es: true ayudan a normalizar la lectura de fechas y strings en CSV y Excel
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true, raw: false });
                     const sheetName = workbook.SheetNames[0];
                     const worksheet = workbook.Sheets[sheetName];
 
@@ -176,6 +67,15 @@
             reader.readAsArrayBuffer(file);
         }
 
+        // Función para normalizar texto (quitar tildes, espacios extras y convertir a mayúsculas)
+        function cleanString(str) {
+            return String(str || "")
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .trim()
+                .toUpperCase();
+        }
+
         processBtn.addEventListener('click', () => {
             if (rawExcelData.length < 2) return;
 
@@ -185,10 +85,19 @@
             log(`🚀 Iniciando extracción para opción: [${selectedOption}]...`, "indigo");
 
             // 1. Obtener los encabezados originales (Fila 0)
-            const originalHeaders = rawExcelData[0];
+            const originalHeaders = rawExcelData[0].map(h => cleanString(h));
 
-            // 2. Construir la estructura completa de encabezados para el archivo final
-            // Mapeando las columnas numéricas y sus 2 columnas hijas correspondientes
+            // Identificar dinámicamente el índice de las columnas clave
+            let colGrupoIndex = originalHeaders.findIndex(h => h.includes("GRUPO") || h.includes("PERTENECE"));
+            let colFechaIndex = originalHeaders.findIndex(h => h.includes("FECHA") && h.includes("CREAC"));
+
+            // Si no las encuentra por nombre, recaer sobre los índices por defecto (9 y 10)
+            if (colGrupoIndex === -1) colGrupoIndex = 9;
+            if (colFechaIndex === -1) colFechaIndex = 10;
+
+            log(`ℹ️ Usando columna [${colGrupoIndex + 1}] para Filtro de Grupo y [${colFechaIndex + 1}] para Fecha de Creación.`, "slate");
+
+            // 2. Estructura de encabezados de salida
             const finalHeaders = [
                 "Identificación",
                 "Edad",
@@ -222,18 +131,22 @@
             const dataRows = rawExcelData.slice(1);
             let filteredRows = [];
 
+            const cleanTarget = cleanString(selectedOption);
+
             dataRows.forEach((row) => {
-                const grupoVal = row[9] !== undefined && row[9] !== null ? String(row[9]).trim() : "";
+                const rawVal = row[colGrupoIndex];
+                const grupoVal = cleanString(rawVal);
                 
                 let matches = false;
-                if (selectedOption === "VACIO") {
-                    matches = (grupoVal === "" || grupoVal.toUpperCase() === "SIN INFORMACIÓN");
+
+                if (cleanTarget === "VACIO") {
+                    matches = (grupoVal === "" || grupoVal === "SIN INFORMACION" || grupoVal === "NULL" || grupoVal === "UNDEFINED");
                 } else {
-                    matches = grupoVal.toUpperCase().startsWith(selectedOption.toUpperCase());
+                    // Coincidencia flexible por inclusión o inicio
+                    matches = grupoVal.includes(cleanTarget);
                 }
 
                 if (matches) {
-                    // Mapear los primeros 26 elementos respetando la estructura objetivo
                     const newRow = [];
                     for (let c = 0; c < 26; c++) {
                         newRow.push(row[c] !== undefined ? row[c] : "");
@@ -245,49 +158,44 @@
             log(`🔍 Registros encontrados que coinciden con [${selectedOption}]: ${filteredRows.length}`, "sky");
 
             if (filteredRows.length === 0) {
-                log(`⚠️ No se encontraron registros para la opción seleccionada.`, "amber");
+                log(`⚠️ No se encontraron registros para la opción seleccionada. Verifica que el archivo contenga valores válidos.`, "amber");
                 badgeCount.classList.remove('hidden');
                 badgeCount.innerText = "0 Registros";
                 return;
             }
 
-            // 4. Ordenamiento Multinivel:
-            // 1º nivel: Grupo al que pertenece (Columna 9) Ascendente
-            // 2º nivel: Fecha Creación (Columna 10) Descendente (de más nuevo a más antiguo)
-            log(`🔃 Aplicando ordenamiento multinivel: 1º Grupo al que pertenece | 2º Fecha Creación (Reciente a Antiguo)...`, "purple");
+            // 4. Ordenamiento Multinivel
+            log(`🔃 Aplicando ordenamiento multinivel...`, "purple");
 
             filteredRows.sort((a, b) => {
-                const grupoA = String(a[9] || "").toUpperCase();
-                const grupoB = String(b[9] || "").toUpperCase();
+                const grupoA = cleanString(a[colGrupoIndex]);
+                const grupoB = cleanString(b[colGrupoIndex]);
 
                 if (grupoA < grupoB) return -1;
                 if (grupoA > grupoB) return 1;
 
-                // Si los grupos son iguales, ordenar por Fecha Creación descendente
-                const fechaA = parseFecha(a[10]);
-                const fechaB = parseFecha(b[10]);
+                const fechaA = parseFecha(a[colFechaIndex]);
+                const fechaB = parseFecha(b[colFechaIndex]);
 
-                return fechaB - fechaA; // Mayor fecha primero (más reciente)
+                return fechaB - fechaA;
             });
 
             // 5. Construcción del nuevo archivo Excel
-            log(`📊 Generando archivo Excel con encabezados corregidos...`, "emerald");
+            log(`📊 Generando archivo Excel...`, "emerald");
 
             const finalData = [finalHeaders, ...filteredRows];
             const newWorksheet = XLSX.utils.aoa_to_sheet(finalData);
 
-            // Ajustar ancho de columnas automáticamente
             const colWidths = finalHeaders.map(h => ({ wch: Math.max(h.length + 3, 15) }));
             newWorksheet['!cols'] = colWidths;
 
             const newWorkbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, "Reporte Filtrado");
 
-            // Generar descarga
             const fileName = `Reporte_Igleco_${selectedOption.replace(/\s+/g, '_')}_${formatDate(new Date())}.xlsx`;
             XLSX.writeFile(newWorkbook, fileName);
 
-            log(`🎉 Archivo descargado exitosamente con el nombre: ${fileName}`, "emerald");
+            log(`🎉 Archivo descargado exitosamente: ${fileName}`, "emerald");
             
             badgeCount.classList.remove('hidden');
             badgeCount.innerText = `${filteredRows.length} Registros Exportados`;
@@ -297,7 +205,6 @@
             if (!val) return new Date(0);
             if (val instanceof Date) return val;
             
-            // Si es número serial de Excel
             if (typeof val === 'number') {
                 return new Date((val - (25567 + 2)) * 86400 * 1000);
             }
@@ -336,5 +243,3 @@
             logArea.scrollTop = logArea.scrollHeight;
         }
     </script>
-</body>
-</html>
